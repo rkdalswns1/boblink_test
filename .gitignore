@@ -1,0 +1,40 @@
+# Python virtual environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+
+# Local environment variables (keep shareable templates)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Runtime database and SQLite sidecar files
+/service.db
+/service.db-journal
+/service.db-wal
+/service.db-shm
+
+# Test and tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local agent runtime state
+.omx/
+
+# Logs and editor/OS temporary files
+*.log
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
