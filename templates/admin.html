@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f2e9">
+  <title>관리자 · 무쓸모</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<a class="skip" href="#content">본문으로 건너뛰기</a>
+<div class="shell admin-shell">
+  <header>
+    <a class="brand" href="{{ url_for('index') }}" aria-label="무쓸모 홈"><span class="brand-icon" aria-hidden="true">m.</span>무쓸모<span class="brand-dot">®</span></a>
+    <span class="nav-note">ADMINISTRATOR ONLY</span>
+    <nav aria-label="계정 메뉴">
+      <a class="nav-link" href="{{ url_for('index') }}">홈 <span aria-hidden="true">↗</span></a>
+      <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+        <button class="nav-link" type="submit">로그아웃 <span aria-hidden="true">↗</span></button>
+      </form>
+    </nav>
+  </header>
+
+  <main id="content" class="admin-main">
+    <div class="admin-heading">
+      <div>
+        <div class="eyebrow"><span class="status-dot"></span> ADMIN CONTROL ROOM</div>
+        <h1>관리자<br><span class="accent">페이지.</span></h1>
+      </div>
+      <p><strong>{{ users|length }}</strong>명의 회원이<br>아무것도 안 하는 중입니다.</p>
+    </div>
+
+    <section class="admin-panel" aria-labelledby="member-title">
+      <div class="panel-heading">
+        <div><span>01 / MEMBERS</span><h2 id="member-title">전체 회원 목록</h2></div>
+        <span class="panel-count">{{ '%03d'|format(users|length) }}</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th scope="col">ID</th><th scope="col">아이디</th><th scope="col">권한</th><th scope="col">클릭</th></tr></thead>
+          <tbody>
+          {% for user in users %}
+            <tr><td>#{{ '%03d'|format(user.id) }}</td><td><strong>{{ user.username }}</strong></td><td><span class="role {{ 'role-admin' if user.is_admin else '' }}">{{ 'ADMIN' if user.is_admin else 'MEMBER' }}</span></td><td>{{ user.clicks }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="admin-panel memo-panel" aria-labelledby="memo-title">
+      <div class="panel-heading"><div><span>02 / PRIVATE MEMO</span><h2 id="memo-title">admin의 메모</h2></div><span class="memo-lock" aria-hidden="true">✳</span></div>
+      {% for note in notes %}
+      <article class="memo"><code>{{ note.content }}</code><time datetime="{{ note.created_at }}">{{ note.created_at }}</time></article>
+      {% else %}
+      <p class="empty">아직 메모가 없습니다.</p>
+      {% endfor %}
+    </section>
+  </main>
+
+  <footer><a href="{{ url_for('index') }}">무쓸모.</a><span>관리자만 접근 가능합니다.</span><span>ADMIN AREA © 2026</span></footer>
+</div>
+</body>
+</html>

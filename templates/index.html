@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f2e9">
+  <title>{{ '회원가입 · ' if page == 'register' else '로그인 · ' if page == 'login' else '' }}무쓸모 — 잘 쉬는 것도 능력.</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<a class="skip" href="#content">본문으로 건너뛰기</a>
+<div class="shell">
+  <header>
+    <a class="brand" href="{{ url_for('index') }}" aria-label="무쓸모 홈"><span class="brand-icon" aria-hidden="true">m.</span>무쓸모<span class="brand-dot">®</span></a>
+    <span class="nav-note">아무것도 안 해도 괜찮은 곳.</span>
+    <nav aria-label="계정 메뉴">
+    {% if g.user %}
+      {% if g.user.is_admin %}
+      <a class="nav-link" href="{{ url_for('admin') }}">관리자 <span aria-hidden="true">↗</span></a>
+      {% endif %}
+      <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+        <button class="nav-link" type="submit">로그아웃 <span aria-hidden="true">↗</span></button>
+      </form>
+    {% else %}
+      <a class="nav-link" href="{{ url_for('login') }}">로그인 <span aria-hidden="true">↗</span></a>
+    {% endif %}
+    </nav>
+  </header>
+  <main id="content">
+    {% for message in get_flashed_messages() %}
+      <p class="message" role="status">{{ message }}</p>
+    {% endfor %}
+    <section class="hero {{ 'auth' if page in ('register', 'login') else '' }}" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="status-dot"></span> THE ART OF DOING NOTHING</div>
+        {% if page in ('register', 'login') %}
+          <h1 id="hero-title">{{ '쓸모없는' if page == 'register' else '다시 만나' }}<br>{{ '시작도' if page == 'register' else '아무것도' }}<br><span class="accent">{{ '좋으니까.' if page == 'register' else '안 반가워요.' }}</span></h1>
+          <p class="intro">{{ '매일 뭔가 해내야 한다는 생각은 잠시 내려두세요.' if page == 'register' else '농담이에요. 기다리고 있었어요.' }}<br>여기서는 아무것도 증명하지 않아도 됩니다.</p>
+          <span class="hand-note">take your time. <span aria-hidden="true">↘</span></span>
+        {% elif g.user %}
+          <h1 id="hero-title">오늘도<br>아무것도<br><span class="accent">안 해내기.</span></h1>
+          <p class="intro"><strong class="username">{{ g.user.username }}</strong>님, 잘 오셨어요.<br>버튼을 눌러도 세상은 그대로. 그게 매력이죠.</p>
+          <div class="hero-meta"><span class="tiny-star" aria-hidden="true">✳</span> 이룬 것 0개. 즐거웠으면 됐죠.</div>
+        {% else %}
+          <h1 id="hero-title">아무것도<br>안 하는<br><span class="accent">대단한 일.</span></h1>
+          <p class="intro">세상은 자꾸 뭘 하라고 하니까.<br>여기서만큼은, 쓸모없이 있어도 괜찮아요.</p>
+          <a class="primary" href="{{ url_for('register') }}">쓸데없이 시작하기 <span aria-hidden="true">↗</span></a>
+          <div class="hero-meta"><span class="tiny-star" aria-hidden="true">✳</span> 부담 0. 성과 0. 그냥 당신의 시간.</div>
+        {% endif %}
+      </div>
+      {% if page in ('register', 'login') %}
+      <div class="auth-card">
+        <div class="card-top"><span>YOUR LITTLE BREAK</span><span aria-hidden="true">↗</span></div>
+        <h2>{{ '회원가입' if page == 'register' else '로그인' }}</h2>
+        <p class="form-intro">{{ '아무것도 안 할 준비, 이것만 하면 끝.' if page == 'register' else '당신의 쓸데없는 기록이 기다려요.' }}</p>
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+          <label for="username">아이디</label>
+          <input id="username" name="username" required minlength="3" maxlength="30" autocomplete="username" placeholder="나를 부를 이름" aria-describedby="username-hint" value="{{ request.form.get('username', '') }}">
+          <small id="username-hint">3~30자로 입력해 주세요.</small>
+          <label for="password">비밀번호</label>
+          <input id="password" name="password" type="password" required minlength="{{ 12 if page == 'register' else 1 }}" maxlength="128" placeholder="나만 아는 비밀번호" aria-describedby="password-hint" autocomplete="{{ 'new-password' if page == 'register' else 'current-password' }}">
+          <small id="password-hint">{{ '12~128자로 입력해 주세요.' if page == 'register' else '비밀번호를 입력해 주세요.' }}</small>
+          <button class="primary" type="submit">{{ '쓸데없이 가입하기' if page == 'register' else '다시 쉬러 가기' }} <span aria-hidden="true">↗</span></button>
+        </form>
+        <p class="form-switch">{{ '이미 계정이 있나요?' if page == 'register' else '아직 계정이 없나요?' }} <a href="{{ url_for('login' if page == 'register' else 'register') }}">{{ '로그인' if page == 'register' else '회원가입' }}</a></p>
+      </div>
+      {% else %}
+      <div class="playground">
+        <div class="card-top"><span>NOTHING MACHINE — 001</span><span class="live"><span class="status-dot"></span> 쉬는 중</span></div>
+        <div class="machine-title">{{ '오늘의 무쓸모 기록' if g.user else '이 버튼은 아무 일도 하지 않습니다.' }}</div>
+        <div class="counter" aria-label="{{ g.user.clicks if g.user else 0 }}번의 클릭">{{ g.user.clicks if g.user else '000' }}<span>CLICKS, ZERO ACHIEVEMENTS.</span></div>
+        <div class="button-stage">
+          <span class="orbit" aria-hidden="true"></span>
+          {% if g.user %}
+          <form method="post" action="{{ url_for('click') }}">
+            <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+            <button class="big-button" type="submit" aria-label="아무 일도 안 하기 +1"><span class="asterisk" aria-hidden="true">✳</span><span>눌러도 괜찮아</span></button>
+          </form>
+          {% else %}
+          <a class="big-button" href="{{ url_for('register') }}" aria-label="회원가입하고 아무 일도 안 하기"><span class="asterisk" aria-hidden="true">✳</span><span>쓸데없이 시작</span></a>
+          {% endif %}
+          <span class="sticker" aria-hidden="true">100%<br>무쓸모 보장</span>
+        </div>
+        <div class="machine-bottom"><span>걱정 마세요. 정말 아무 일도 안 일어나요.</span><span aria-hidden="true">↙</span></div>
+      </div>
+      {% endif %}
+    </section>
+    {% if g.user and page == 'index' %}
+    <section class="notes-panel" id="notes" aria-labelledby="notes-title">
+      <div class="notes-heading">
+        <div><span class="number">PRIVATE NOTES / {{ '%03d'|format(notes|length) }}</span><h2 id="notes-title">나만의 쓸데없는 메모.</h2></div>
+        <p>본인 계정에서만 보여요.<br>최대 100개까지 조용히 보관합니다.</p>
+      </div>
+      <form class="note-compose" method="post" action="{{ url_for('create_note') }}">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+        <label for="note-content">새 메모</label>
+        <textarea id="note-content" name="content" required maxlength="1000" rows="4" placeholder="아무 쓸모 없는 생각도 괜찮아요."></textarea>
+        <div><small>1~1,000자 · 계정당 최대 100개</small><button class="primary" type="submit">메모 남기기 <span aria-hidden="true">↗</span></button></div>
+      </form>
+      {% if notes %}
+      <ol class="note-list">
+        {% for note in notes %}
+        <li>
+          <div><time datetime="{{ note.created_at }}">{{ note.created_at }}</time><p>{{ note.content }}</p></div>
+          <form method="post" action="{{ url_for('delete_note', note_id=note.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+            <button type="submit" aria-label="메모 삭제">삭제</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <p class="notes-empty">아직 메모가 없어요. 첫 번째 무쓸모를 남겨보세요.</p>
+      {% endif %}
+    </section>
+    {% endif %}
+    <div class="manifesto"><span>LESS DOING.</span><span class="manifesto-star" aria-hidden="true">✳</span><span>MORE BEING.</span><span class="manifesto-note">가끔은, 그냥 있는 것만으로 충분해요.</span></div>
+    <section class="principles" aria-label="무쓸모 사용 철학">
+      <article><span class="number">01 / NO PRESSURE</span><h2>목표는 없어요.</h2><p>달성률도, 연속 출석도 없어요.<br>열심히 안 해도 되는 유일한 곳.</p></article>
+      <article><span class="number">02 / JUST A CLICK</span><h2>클릭만 남아요.</h2><p>당신의 쓸데없는 클릭 하나하나.<br>그 기록만은 정성껏 보관할게요.</p></article>
+      <article><span class="number">03 / THAT’S ENOUGH</span><h2>그걸로 충분해요.</h2><p>아무것도 안 했다고요?<br>잘하셨어요. 그게 전부예요.</p></article>
+    </section>
+  </main>
+  <footer><a href="{{ url_for('index') }}">무쓸모.</a><span>생산성 0%를 지향합니다.</span><span>MADE FOR NOTHING. © 2026</span></footer>
+</div>
+</body>
+</html>

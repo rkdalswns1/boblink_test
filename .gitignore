@@ -19,6 +19,7 @@ dist/
 /service.db-journal
 /service.db-wal
 /service.db-shm
+/.session.key
 
 # Test and tool caches
 .pytest_cache/
