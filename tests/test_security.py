@@ -275,5 +275,155 @@ class BootstrapMigrationTests(unittest.TestCase):
             self.assertTrue(check_password_hash(password_hash, new_password))
 
 
+class NotesApiTests(unittest.TestCase):
+    setUp = AppSecurityTests.setUp
+    csrf = AppSecurityTests.csrf
+    login = AppSecurityTests.login
+
+    def api_client(self, username="api-user"):
+        with application.app.app_context():
+            db = application.get_db()
+            db.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                (username, application.generate_password_hash("1235678")),
+            )
+            db.commit()
+        client = application.app.test_client()
+        self.assertEqual(self.login(client, username, "1235678").status_code, 302)
+        return client
+
+    def api_post(self, client, payload):
+        token = client.get("/api/csrf").get_json()["csrf_token"]
+        return client.post("/api/notes", json=payload, headers={"X-CSRF-Token": token})
+
+    def test_api_requires_session_before_validating_input(self):
+        client = application.app.test_client()
+        for method, path in [("GET", "/api/notes"), ("POST", "/api/notes"),
+                             ("GET", "/api/notes/1"), ("GET", "/api/csrf"),
+                             ("GET", "/api/missing")]:
+            with self.subTest(method=method, path=path):
+                response = client.open(path, method=method)
+                self.assertEqual(response.status_code, 401)
+                self.assertIsInstance(response.get_json()["error"], str)
+                self.assertNotIn("Location", response.headers)
+                self.assertIn("no-store", response.headers["Cache-Control"])
+
+    def test_api_create_list_and_fetch(self):
+        client = self.api_client()
+        self.assertEqual(client.get("/api/notes").get_json(), {"notes": []})
+        first = self.api_post(client, {"title": "  meeting \t", "body": "3pm\nroom 2"})
+        self.assertEqual(first.status_code, 201)
+        note = first.get_json()
+        self.assertIsInstance(note["id"], int)
+        for key in ("title", "body", "created_at", "updated_at"):
+            self.assertIsInstance(note[key], str)
+        self.assertEqual(note["title"], "meeting")
+        self.assertEqual(note["body"], "3pm\nroom 2")
+        self.assertEqual(note["created_at"], note["updated_at"])
+        self.assertRegex(note["created_at"], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+        second = self.api_post(client, {"title": "empty body", "owner_id": 1}).get_json()
+        self.assertEqual(second["body"], "")
+        self.assertEqual(client.get("/api/notes").get_json()["notes"], [second, note])
+        self.assertEqual(client.get(f"/api/notes/{note['id']}").get_json(), note)
+
+    def test_api_ownership_and_not_found(self):
+        owner = self.api_client("api-owner")
+        note = self.api_post(owner, {"title": "private"}).get_json()
+        other = self.api_client("api-other")
+        self.assertEqual(other.get("/api/notes").get_json(), {"notes": []})
+        for note_id in (note["id"], 99999, 2**100, "not-an-id", -1):
+            response = other.get(f"/api/notes/{note_id}")
+            self.assertEqual(response.status_code, 404)
+            self.assertTrue(response.is_json)
+
+    def test_api_rejects_invalid_titles_and_bodies(self):
+        client = self.api_client()
+        payloads = [{}, {"title": ""}, {"title": " \t\n\u3000"},
+                    {"title": None}, {"title": 4}, {"title": []},
+                    {"title": "a" * 201}, [], "text"]
+        payloads += [{"title": "valid", "body": body} for body in (None, 4, [], "x" * 1001)]
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                response = self.api_post(client, payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertTrue(response.is_json)
+        self.assertEqual(client.get("/api/notes").get_json(), {"notes": []})
+        self.assertEqual(self.api_post(client, {"title": "a" * 200, "body": "x" * 1000}).status_code, 201)
+
+    def test_api_csrf_and_json_errors(self):
+        client = self.api_client()
+        for headers in ({}, {"X-CSRF-Token": "wrong"}, {"X-CSRF-Token": "한글"}):
+            response = client.post("/api/notes", json={"title": "test"}, headers=headers)
+            self.assertEqual(response.status_code, 400)
+            self.assertTrue(response.is_json)
+        token = client.get("/api/csrf").get_json()["csrf_token"]
+        for data, content_type, status in [("{", "application/json", 400),
+                                          ("null", "application/json", 400),
+                                          ('{"title":"hi"}', "text/plain", 415)]:
+            response = client.post("/api/notes", data=data, content_type=content_type,
+                                   headers={"X-CSRF-Token": token})
+            self.assertEqual(response.status_code, status)
+            self.assertTrue(response.is_json)
+        response = client.put("/api/notes", headers={"X-CSRF-Token": token})
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(response.is_json)
+        self.assertIn("Allow", response.headers)
+        oversized = client.post("/api/notes", json={"title": "x" * 20000},
+                                headers={"X-CSRF-Token": token})
+        self.assertEqual(oversized.status_code, 413)
+        self.assertTrue(oversized.is_json)
+
+    def test_api_expired_and_revoked_sessions(self):
+        client = self.api_client()
+        with application.app.app_context():
+            db = application.get_db()
+            db.execute("UPDATE auth_sessions SET expires_at = 0")
+            db.commit()
+        self.assertEqual(client.get("/api/notes").status_code, 401)
+        self.login(client, "api-user", "1235678")
+        cookie_name = application.app.config["SESSION_COOKIE_NAME"]
+        copied = application.app.test_client()
+        copied.set_cookie(cookie_name, client.get_cookie(cookie_name).value)
+        client.post("/logout", data={"csrf_token": self.csrf(client)})
+        self.assertEqual(copied.get("/api/notes").status_code, 401)
+
+    def test_api_capacity_and_legacy_html_notes(self):
+        client = self.api_client()
+        client.post("/notes", data={"content": "existing HTML note", "csrf_token": self.csrf(client)})
+        note = client.get("/api/notes").get_json()["notes"][0]
+        self.assertEqual(note["title"], "메모")
+        self.assertEqual(note["body"], "existing HTML note")
+        self.assertEqual(note["created_at"], note["updated_at"])
+        with application.app.app_context():
+            db = application.get_db()
+            owner_id = db.execute("SELECT id FROM users WHERE username='api-user'").fetchone()[0]
+            db.executemany("INSERT INTO notes (owner_id, content) VALUES (?, ?)",
+                           [(owner_id, "existing") for _ in range(99)])
+            db.commit()
+        response = self.api_post(client, {"title": "over capacity"})
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(response.is_json)
+        self.assertEqual(len(client.get("/api/notes").get_json()["notes"]), 100)
+
+    def test_api_schema_migration_preserves_old_notes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.db"
+            with sqlite3.connect(path) as db:
+                db.executescript("""
+                    CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL,
+                        password_hash TEXT NOT NULL, clicks INTEGER NOT NULL DEFAULT 0,
+                        is_admin INTEGER NOT NULL DEFAULT 0);
+                    INSERT INTO users (id, username, password_hash) VALUES (1, 'legacy', 'unused');
+                    CREATE TABLE notes (id INTEGER PRIMARY KEY, owner_id INTEGER NOT NULL,
+                        content TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+                    INSERT INTO notes VALUES (1, 1, 'keep this', '2026-09-16 00:00:00');
+                """)
+            application.initialize_database(path)
+            application.initialize_database(path)
+            with sqlite3.connect(path) as db:
+                row = db.execute(f"SELECT {application.NOTE_FIELDS} FROM notes WHERE id=1").fetchone()
+            self.assertEqual(row, (1, "메모", "keep this", "2026-09-16 00:00:00", "2026-09-16 00:00:00"))
+
+
 if __name__ == "__main__":
     unittest.main()

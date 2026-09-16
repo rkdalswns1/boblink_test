@@ -10,8 +10,8 @@ from datetime import timedelta
 from functools import wraps
 from pathlib import Path
 
-from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
-from werkzeug.exceptions import TooManyRequests
+from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.exceptions import HTTPException, TooManyRequests
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -128,6 +128,12 @@ def initialize_database(path, admin_password=None, admin_memo=None):
                 );
             """)
             rate_limit_columns = {row[1] for row in db.execute("PRAGMA table_info(rate_limits)")}
+            note_columns = {row[1] for row in db.execute("PRAGMA table_info(notes)")}
+            if "title" not in note_columns:
+                db.execute("ALTER TABLE notes ADD COLUMN title TEXT NOT NULL DEFAULT '메모'")
+            if "updated_at" not in note_columns:
+                db.execute("ALTER TABLE notes ADD COLUMN updated_at TEXT")
+            db.execute("CREATE INDEX IF NOT EXISTS notes_owner_id ON notes(owner_id, id)")
             if "expires_at" not in rate_limit_columns:
                 db.execute("ALTER TABLE rate_limits ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0")
             if users_table_exists and "is_admin" not in old_user_columns:
@@ -342,10 +348,26 @@ def load_user_and_check_csrf():
         session.clear()
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(32)
-    if request.method == "POST" and not secrets.compare_digest(
-        session["csrf_token"], request.form.get("csrf_token", "")
+    is_api = request.path.startswith("/api/")
+    if is_api and g.user is None:
+        abort(401, description="로그인이 필요합니다.")
+    supplied_token = (
+        request.headers.get("X-CSRF-Token", "") if is_api
+        else request.form.get("csrf_token", "")
+    ) if request.method in {"POST", "PUT", "PATCH", "DELETE"} else ""
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not secrets.compare_digest(
+        session["csrf_token"].encode("utf-8"), supplied_token.encode("utf-8")
     ):
         abort(400, description="요청이 만료되었습니다. 새로고침 후 다시 시도해 주세요.")
+
+
+@app.errorhandler(HTTPException)
+def handle_http_error(error):
+    response = error.get_response()
+    if request.path.startswith("/api/"):
+        response.data = app.json.dumps({"error": error.description})
+        response.content_type = "application/json"
+    return response
 
 
 @app.after_request
@@ -361,7 +383,7 @@ def add_security_headers(response):
     response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-    if g.get("sensitive_response") or g.get("user") is not None or request.endpoint in {"login", "register"}:
+    if request.path.startswith("/api/") or g.get("sensitive_response") or g.get("user") is not None or request.endpoint in {"login", "register"}:
         response.headers["Cache-Control"] = "no-store, private"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -550,6 +572,73 @@ def delete_note(note_id):
     if cursor.rowcount:
         flash("메모를 지웠어요.")
     return redirect(url_for("index") + "#notes")
+
+
+NOTE_FIELDS = "id, title, content AS body, created_at, COALESCE(updated_at, created_at) AS updated_at"
+
+
+@app.get("/api/csrf")
+def api_csrf():
+    return jsonify(csrf_token=session["csrf_token"])
+
+
+@app.get("/api/notes")
+def api_list_notes():
+    notes = get_db().execute(
+        f"SELECT {NOTE_FIELDS} FROM notes WHERE owner_id = ? ORDER BY id DESC",
+        (g.user["id"],),
+    ).fetchall()
+    return jsonify(notes=[dict(note) for note in notes])
+
+
+@app.post("/api/notes")
+def api_create_note():
+    if not request.is_json:
+        abort(415, description="Content-Type은 application/json이어야 합니다.")
+    payload = request.get_json()
+    if not isinstance(payload, dict):
+        abort(400, description="JSON 객체를 입력해 주세요.")
+    title = payload.get("title")
+    body = payload.get("body", "")
+    if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200:
+        abort(400, description="제목은 앞뒤 공백을 제거한 뒤 1~200자여야 합니다.")
+    if not isinstance(body, str) or len(body) > 1000:
+        abort(400, description="본문은 1,000자 이하의 문자열이어야 합니다.")
+    db = get_db()
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        count = db.execute(
+            "SELECT COUNT(*) FROM notes WHERE owner_id = ?", (g.user["id"],)
+        ).fetchone()[0]
+        if count >= 100:
+            abort(409, description="메모는 계정당 100개까지 저장할 수 있습니다.")
+        cursor = db.execute(
+            "INSERT INTO notes (owner_id, title, content, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+            (g.user["id"], title.strip(), body),
+        )
+        note = db.execute(
+            f"SELECT {NOTE_FIELDS} FROM notes WHERE id = ? AND owner_id = ?",
+            (cursor.lastrowid, g.user["id"]),
+        ).fetchone()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return jsonify(dict(note)), 201
+
+
+@app.get("/api/notes/<int:note_id>")
+def api_get_note(note_id):
+    # SQLite INTEGER is signed 64-bit; larger URL integers must still return 404.
+    if note_id > 2**63 - 1:
+        abort(404)
+    note = get_db().execute(
+        f"SELECT {NOTE_FIELDS} FROM notes WHERE id = ? AND owner_id = ?",
+        (note_id, g.user["id"]),
+    ).fetchone()
+    if note is None:
+        abort(404, description="메모를 찾을 수 없습니다.")
+    return jsonify(dict(note))
 
 
 if __name__ == "__main__":
