@@ -30,6 +30,9 @@ jobs:
           username: ${{ secrets.ORACLE_USERNAME }}
           key: ${{ secrets.ORACLE_SSH_KEY }}
           script: |
+            set -e
             cd /home/ubuntu/musulmo
-            git pull
-            docker compose up -d --build
+            git pull --ff-only
+            git lfs pull
+            docker load -i musulmo.tar
+            docker compose up -d --no-build --force-recreate
