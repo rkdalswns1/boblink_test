@@ -1,6 +1,8 @@
 services:
   app:
-    build: .
+    image: musulmo:1.0
+    environment:
+      APP_DATABASE: /app/data/service.db
     volumes:
       - ./data:/app/data
     env_file:
