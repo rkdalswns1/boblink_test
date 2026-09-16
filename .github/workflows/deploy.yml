@@ -30,6 +30,6 @@ jobs:
           username: ${{ secrets.ORACLE_USERNAME }}
           key: ${{ secrets.ORACLE_SSH_KEY }}
           script: |
-            cd ~/musolmo
+            cd ~/musulmo
             git pull
             docker compose up -d --build
