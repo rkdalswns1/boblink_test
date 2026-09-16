@@ -8,6 +8,21 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate deployment secrets
+        shell: bash
+        env:
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
+          ORACLE_USERNAME: ${{ secrets.ORACLE_USERNAME }}
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          missing=0
+          for name in ORACLE_HOST ORACLE_USERNAME ORACLE_SSH_KEY; do
+            if [[ -z "${!name//[[:space:]]/}" ]]; then
+              echo "::error::Missing secret: $name. Set it in repository Settings > Secrets and variables > Actions > Repository secrets."
+              missing=1
+            fi
+          done
+          exit "$missing"
       - name: Deploy to VM
         uses: appleboy/ssh-action@master
         with:
